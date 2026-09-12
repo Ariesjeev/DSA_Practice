@@ -1,133 +1,81 @@
-class State {
-    long score; 
-    List<Integer> ids; 
-    State(int sc, List<Integer> ids) {
-        this.score = sc; 
-        this.ids = ids; 
-    }
-
-    State(State s) {
-        this.score = s.score; 
-        this.ids = new ArrayList<>(s.ids);
-    }
-
-    State() {
-        this.score = 0;
-        this.ids = new ArrayList<>();
-    }
-}
-
-class Intervals {
-    int st, en, idx, weight; 
-    Intervals(int s, int e, int i, int w) {
-        st = s; 
-        en = e; 
-        idx = i; 
-        weight = w; 
-    }
-}
-
 class Solution {
-    
+
     public int[] maximumWeight(List<List<Integer>> intervals) {
-        // We are going to use DP + binary search here. 
-        int n = intervals.size(); 
-        List<Intervals> in = new ArrayList<>(); 
-        for(int i = 0; i < n; i++) {
-            in.add(new Intervals(intervals.get(i).get(0), intervals.get(i).get(1), i, intervals.get(i).get(2))); 
+        int n = intervals.size();
+        int[][] arr = new int[n][4];
+        for (int i = 0; i < n; i++) {
+            arr[i][0] = intervals.get(i).get(0);
+            arr[i][1] = intervals.get(i).get(1);
+            arr[i][2] = intervals.get(i).get(2);
+            arr[i][3] = i;
         }
+        // Sort by right endpoint.
+        Arrays.sort(arr, (a, b) -> Integer.compare(a[1], b[1]));
 
-        Collections.sort(in, (a, b) -> {
-            if(a.en != b.en) return Integer.compare(a.en, b.en); 
-            return Integer.compare(a.st, b.st); 
-        }); 
-
-        // Now for each index we need to store the intervals_cnt and their contributing max values. 
-        // to find the non overlapping we will do the binary search 
-        State[][] dp = new State[n + 1][5];
-
-        // init dp 
+        long[][] dp = new long[n + 1][5];
+        List<Integer>[][] indices = new List[n + 1][5];
         for (int i = 0; i <= n; i++) {
-            for (int j = 0; j <= 4; j++) {
-                dp[i][j] = new State();
+            for (int j = 0; j < 5; j++) {
+                indices[i][j] = new ArrayList<>();
             }
         }
 
-        for(int i = 1; i <= n; i++) {
-            // bs to find last non-overlapping index 
-            int target = in.get(i -1).st, lo = 0, hi = i - 2; // because we are 1 index based, cur = i - 1, prev = i - 2
-            int pos = 0; // found nothing 
-            while(lo <= hi) {
-                int mid = (lo + hi) >> 1; 
-                if(in.get(mid).en < target) {
-                    pos = mid + 1; // convert to 1 based dp index 
-                    lo = mid + 1; 
-                } else {
-                    // overlap 
-                    hi = mid - 1; 
+        for (int i = 0; i < n; i++) {
+            int l = arr[i][0],
+                weight = arr[i][2],
+                idx = arr[i][3];
+            // Use binary search to find intervals whose right endpoints are smaller than l.
+            int k = binarySearch(arr, i, l);
+
+            for (int j = 1; j < 5; j++) {
+                long s1 = dp[i][j];
+                long s2 = dp[k][j - 1] + weight;
+                if (s1 > s2) {
+                    dp[i + 1][j] = dp[i][j];
+                    indices[i + 1][j] = new ArrayList<>(indices[i][j]);
+                    continue;
                 }
-            }
 
-            // Now we have to update 1 that contributes less than current index score 
-
-            for(int j = 1; j <= 4; j++) {
-                // if we don't take cur, best from prev 
-                dp[i][j] = new State(dp[i-1][j]); 
-
-                // if we take current we have to update from last non overlapping one. 
-                State prev = new State(dp[pos][j-1]); // one less interval 
-                prev.score += in.get(i -1).weight;
-                prev.ids.add(in.get(i-1).idx); 
-
-                // sort the id's
-                Collections.sort(prev.ids); // happens by ref 
-
-                // is current yeilds better result
-                update(dp[i][j], prev); 
-            }
-
-        }
-
-        State bestState = dp[n][1];
-        for (int j = 2; j <= 4; j++) {
-            if (dp[n][j].score > bestState.score) {
-                bestState = dp[n][j];
-            } else if (dp[n][j].score == bestState.score && !dp[n][j].ids.isEmpty()) {
-                if (isSmaller(dp[n][j].ids, bestState.ids)) {
-                    bestState = dp[n][j];
+                List<Integer> newIndex = new ArrayList<>(indices[k][j - 1]);
+                newIndex.add(idx);
+                Collections.sort(newIndex);
+                if (s1 == s2 && compareLists(indices[i][j], newIndex) < 0) {
+                    newIndex = new ArrayList<>(indices[i][j]);
                 }
+                dp[i + 1][j] = s2;
+                indices[i + 1][j] = newIndex;
             }
         }
 
-        int ansLen = dp[n][4].ids.size(); 
-        int ans[] = new int[ansLen]; 
-        for(int i = 0; i < ansLen; i++) ans[i] = dp[n][4].ids.get(i); 
-        return ans; 
+        List<Integer> result = indices[n][4];
+        int[] ans = new int[result.size()];
+        for (int i = 0; i < result.size(); i++) {
+            ans[i] = result.get(i);
+        }
+        return ans;
     }
 
-    private void update(State cur, State candidate) {
-        if(cur.score < candidate.score) {
-            // update 
-            cur.score = candidate.score; 
-            cur.ids = new ArrayList<>(candidate.ids); 
-        } else if(cur.score == candidate.score && !candidate.ids.isEmpty()) {
-            //candidate id's lexicographically smaller
-            if(isSmaller(candidate.ids, cur.ids)) {
-                // update 
-                cur.score = candidate.score; 
-                cur.ids = new ArrayList<>(candidate.ids); 
+    private int binarySearch(int[][] arr, int end, int target) {
+        int left = 0,
+            right = end;
+        while (left < right) {
+            int mid = (left + right) / 2;
+            if (arr[mid][1] < target) {
+                left = mid + 1;
+            } else {
+                right = mid;
             }
         }
+        return left;
     }
 
-    private boolean isSmaller(List<Integer> a, List<Integer> b) {
-        int len = Math.min(a.size(), b.size());
-
-        for (int i = 0; i < len; i++) {
+    private int compareLists(List<Integer> a, List<Integer> b) {
+        int minLen = Math.min(a.size(), b.size());
+        for (int i = 0; i < minLen; i++) {
             if (!a.get(i).equals(b.get(i))) {
-                return a.get(i) < b.get(i);
+                return Integer.compare(a.get(i), b.get(i));
             }
         }
-        return a.size() < b.size();
+        return Integer.compare(a.size(), b.size());
     }
 }
